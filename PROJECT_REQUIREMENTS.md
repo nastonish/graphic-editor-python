@@ -213,3 +213,139 @@ The project should include a separate file:
 
 ```text
 help.html
+The help file should be written in Ukrainian and should describe:
+
+purpose of the program;
+main window;
+drawing tools;
+file operations;
+editing operations;
+image operations;
+keyboard shortcuts;
+typical usage examples.
+
+The program should have a menu command that opens this help file in the default web browser.
+
+10. Examples Folder
+
+The project should include a folder:
+
+examples/
+
+This folder should contain example images created with the editor and a comments file:
+
+examples/comments.txt
+
+The comments file should briefly explain what each example demonstrates.
+
+Example:
+
+example_01_shapes.png - Demonstrates drawing lines, rectangles and ellipses.
+example_02_filters.png - Demonstrates grayscale and color inversion.
+example_03_selection.png - Demonstrates selection, copy and paste.
+example_04_large_canvas.png - Demonstrates working with a large image and scrollbars.
+11. Documentation for Report
+
+The project should include a folder:
+
+docs/
+
+Inside it, there should be a file:
+
+docs/notes_for_report.md
+
+This file should contain notes in Ukrainian for the final report.
+
+The notes should describe:
+
+project purpose;
+development environment;
+connection with previous laboratory works;
+implemented interface requirements;
+help subsystem;
+examples folder;
+functional groups of commands;
+visibility control of tool groups;
+design and ergonomics;
+implemented drawing tools;
+implemented image operations;
+suggested screenshots for the final report;
+conclusion.
+
+The final report itself will be prepared separately as a DOCX or PDF file and should not be archived together with the project.
+
+12. Suggested Project Structure
+graphic-editor-python/
+│
+├── main.py
+├── requirements.txt
+├── README.md
+├── PROJECT_SPEC.md
+├── help.html
+│
+├── examples/
+│   ├── comments.txt
+│   └── sample images
+│
+└── docs/
+    └── notes_for_report.md
+13. Required Dependency
+
+The requirements.txt file should contain:
+
+Pillow
+
+No unnecessary external libraries should be added.
+
+14. Keyboard Shortcuts
+
+The editor should support keyboard shortcuts where possible:
+
+Ctrl+N — new image;
+Ctrl+O — open image;
+Ctrl+S — save image;
+Ctrl+Z — undo;
+Esc — cancel current unfinished operation.
+
+At minimum, Ctrl+Z and Esc should be implemented.
+
+15. Definition of Done
+
+The project can be considered complete when:
+
+the application starts with python main.py;
+the main window opens correctly;
+the user can draw with pencil, line, rectangle and ellipse tools;
+the user can choose colors and line width;
+the user can create, open and save images;
+undo works;
+Esc cancels the current unfinished operation;
+canvas clearing requires confirmation;
+rectangular selection, copy and paste work at least in a basic form;
+at least two image filters work;
+rotation and mirror operations work;
+scrollbars are available for large images;
+commands are grouped in the interface;
+the toolbar can be shown or hidden;
+help.html exists and opens from the program;
+examples/comments.txt exists;
+docs/notes_for_report.md exists;
+the code is readable and appropriate for a student project;
+there are no mentions of AI, ChatGPT, Codex or generated code in project files.
+
+---
+
+Оце буде краще, ніж той попередній варіант. Він задає **рамки і вимоги**, але не наказує Codex, у якій послідовності все робити.
+
+А вже далі ми будемо давати Codex маленькі конкретні промпти, наприклад:
+
+```text
+Read README.md and PROJECT_SPEC.md. Create only the initial project structure and a working Tkinter window with a blank canvas. Do not implement all features yet.
+
+Потім:
+
+Add drawing tools: pencil, line, rectangle and ellipse.
+
+Потім:
+
+Add file operations: new, open, save, save as.
