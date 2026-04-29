@@ -3,7 +3,7 @@ from pathlib import Path
 import webbrowser
 
 from PIL import Image, ImageDraw, ImageTk
-from tkinter import colorchooser, messagebox
+from tkinter import colorchooser, filedialog, messagebox
 
 
 class GraphicEditorApp:
@@ -24,6 +24,8 @@ class GraphicEditorApp:
         self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
         self.photo_image = None
         self.canvas_image_id = None
+        self.current_file_path = None
+        self.is_modified = False
 
         self.undo_stack = []
         self.preview_item_id = None
@@ -39,24 +41,25 @@ class GraphicEditorApp:
         self._create_status_bar()
         self._bind_events()
         self._refresh_canvas_image()
+        self._update_window_title()
 
     def _create_menu(self):
         menu_bar = tk.Menu(self.root)
 
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(label="Новий", command=self._not_implemented)
-        file_menu.add_command(label="Відкрити", command=self._not_implemented)
-        file_menu.add_command(label="Зберегти", command=self._not_implemented)
-        file_menu.add_command(label="Зберегти як", command=self._not_implemented)
+        file_menu.add_command(label="Новий", command=self._new_image)
+        file_menu.add_command(label="Відкрити", command=self._open_image)
+        file_menu.add_command(label="Зберегти", command=self._save_image)
+        file_menu.add_command(label="Зберегти як", command=self._save_image_as)
         file_menu.add_separator()
-        file_menu.add_command(label="Вийти", command=self.root.quit)
+        file_menu.add_command(label="Вийти", command=self._exit_app)
         menu_bar.add_cascade(label="Файл", menu=file_menu)
 
         edit_menu = tk.Menu(menu_bar, tearoff=0)
         edit_menu.add_command(label="Скасувати", command=self._undo)
         edit_menu.add_command(label="Копіювати", command=self._not_implemented)
         edit_menu.add_command(label="Вставити", command=self._not_implemented)
-        edit_menu.add_command(label="Очистити", command=self._not_implemented)
+        edit_menu.add_command(label="Очистити", command=self._clear_canvas)
         menu_bar.add_cascade(label="Редагування", menu=edit_menu)
 
         tools_menu = tk.Menu(menu_bar, tearoff=0)
@@ -111,6 +114,7 @@ class GraphicEditorApp:
         edit_group = tk.LabelFrame(self.toolbar_frame, text="Редагування", padx=4, pady=3)
         edit_group.pack(side=tk.LEFT, padx=4)
         tk.Button(edit_group, text="Скасувати", command=self._undo).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Очистити", command=self._clear_canvas).pack(side=tk.LEFT, padx=2)
 
     def _create_canvas_area(self):
         canvas_frame = tk.Frame(self.root)
@@ -154,7 +158,14 @@ class GraphicEditorApp:
 
         self.root.bind("<Control-z>", self._undo_shortcut)
         self.root.bind("<Control-Z>", self._undo_shortcut)
+        self.root.bind("<Control-n>", self._new_image_shortcut)
+        self.root.bind("<Control-N>", self._new_image_shortcut)
+        self.root.bind("<Control-o>", self._open_image_shortcut)
+        self.root.bind("<Control-O>", self._open_image_shortcut)
+        self.root.bind("<Control-s>", self._save_image_shortcut)
+        self.root.bind("<Control-S>", self._save_image_shortcut)
         self.root.bind("<Escape>", self._cancel_preview)
+        self.root.protocol("WM_DELETE_WINDOW", self._exit_app)
 
     def _get_canvas_coordinates(self, event):
         return int(self.canvas.canvasx(event.x)), int(self.canvas.canvasy(event.y))
@@ -192,15 +203,52 @@ class GraphicEditorApp:
     def _save_state_for_undo(self):
         self.undo_stack.append(self.image.copy())
 
+    def _mark_modified(self):
+        self.is_modified = True
+        self._update_window_title()
+
+    def _mark_saved(self):
+        self.is_modified = False
+        self._update_window_title()
+
+    def _update_window_title(self):
+        base_title = "Графічний редактор"
+        file_name = "Без назви"
+        if self.current_file_path:
+            file_name = Path(self.current_file_path).name
+        modified_mark = " *" if self.is_modified else ""
+        self.root.title(f"{base_title} — {file_name}{modified_mark}")
+
+    def _confirm_discard_changes(self):
+        if not self.is_modified:
+            return True
+        return messagebox.askyesno(
+            "Незбережені зміни",
+            "Поточне зображення має незбережені зміни. Продовжити без збереження?",
+        )
+
     def _undo(self):
         if not self.undo_stack:
             messagebox.showinfo("Інформація", "Немає дії для скасування.")
             return
         self.image = self.undo_stack.pop()
         self._refresh_canvas_image()
+        self._mark_modified()
 
     def _undo_shortcut(self, event):
         self._undo()
+
+    def _new_image_shortcut(self, event):
+        self._new_image()
+        return "break"
+
+    def _open_image_shortcut(self, event):
+        self._open_image()
+        return "break"
+
+    def _save_image_shortcut(self, event):
+        self._save_image()
+        return "break"
 
     def _on_mouse_down(self, event):
         x, y = self._get_canvas_coordinates(event)
@@ -265,6 +313,7 @@ class GraphicEditorApp:
         tool = self.current_tool.get()
 
         if tool == "Олівець":
+            self._mark_modified()
             return
 
         if tool not in {"Лінія", "Прямокутник", "Еліпс"}:
@@ -294,12 +343,98 @@ class GraphicEditorApp:
 
         self._cancel_preview()
         self._refresh_canvas_image()
+        self._mark_modified()
 
     def _cancel_preview(self, event=None):
         self.is_drawing = False
         if self.preview_item_id is not None:
             self.canvas.delete(self.preview_item_id)
             self.preview_item_id = None
+
+    def _new_image(self):
+        if not self._confirm_discard_changes():
+            return
+        self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
+        self.current_file_path = None
+        self.undo_stack.clear()
+        self._cancel_preview()
+        self._refresh_canvas_image()
+        self._mark_saved()
+
+    def _open_image(self):
+        if not self._confirm_discard_changes():
+            return
+        file_path = filedialog.askopenfilename(
+            title="Відкрити зображення",
+            filetypes=[
+                ("Зображення", "*.png *.jpg *.jpeg *.bmp"),
+                ("PNG", "*.png"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("BMP", "*.bmp"),
+                ("Усі файли", "*.*"),
+            ],
+        )
+        if not file_path:
+            return
+        try:
+            opened = Image.open(file_path).convert("RGB")
+            self.image = opened
+            self.image_width, self.image_height = self.image.size
+            self.current_file_path = file_path
+            self.undo_stack.clear()
+            self._cancel_preview()
+            self._refresh_canvas_image()
+            self._mark_saved()
+        except Exception:
+            messagebox.showerror("Помилка", "Файл не вдалося відкрити.")
+
+    def _save_image(self):
+        if not self.current_file_path:
+            self._save_image_as()
+            return
+        try:
+            self.image.save(self.current_file_path)
+            self._mark_saved()
+        except Exception:
+            messagebox.showerror("Помилка", "Файл не вдалося зберегти.")
+
+    def _save_image_as(self):
+        file_path = filedialog.asksaveasfilename(
+            title="Зберегти зображення як",
+            defaultextension=".png",
+            filetypes=[
+                ("PNG", "*.png"),
+                ("JPEG", "*.jpg *.jpeg"),
+                ("BMP", "*.bmp"),
+                ("Усі файли", "*.*"),
+            ],
+        )
+        if not file_path:
+            return
+        try:
+            self.image.save(file_path)
+            self.current_file_path = file_path
+            self._mark_saved()
+        except Exception:
+            messagebox.showerror("Помилка", "Файл не вдалося зберегти.")
+
+    def _clear_canvas(self):
+        confirmed = messagebox.askyesno(
+            "Підтвердження",
+            "Очистити полотно? Цю дію можна скасувати через 'Скасувати'.",
+        )
+        if not confirmed:
+            return
+        self._save_state_for_undo()
+        self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
+        self._cancel_preview()
+        self._refresh_canvas_image()
+        self._mark_modified()
+
+    def _exit_app(self):
+        if not self._confirm_discard_changes():
+            return
+        self.root.destroy()
 
     def _open_help(self):
         help_path = Path(__file__).with_name("help.html")
