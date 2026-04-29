@@ -89,7 +89,7 @@ class GraphicEditorApp:
 
         view_menu = tk.Menu(menu_bar, tearoff=0)
         view_menu.add_checkbutton(
-            label="Показати панель інструментів",
+            label="Показати/сховати панель інструментів",
             variable=self.toolbar_visible,
             command=self._toggle_toolbar,
         )
