@@ -29,6 +29,9 @@ class GraphicEditorApp:
 
         self.undo_stack = []
         self.preview_item_id = None
+        self.selection_preview_id = None
+        self.selection_rect = None
+        self.copied_fragment = None
         self.start_x = None
         self.start_y = None
         self.last_x = None
@@ -40,7 +43,7 @@ class GraphicEditorApp:
         self._create_canvas_area()
         self._create_status_bar()
         self._bind_events()
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._update_window_title()
 
     def _create_menu(self):
@@ -177,13 +180,19 @@ class GraphicEditorApp:
     def _get_canvas_coordinates(self, event):
         return int(self.canvas.canvasx(event.x)), int(self.canvas.canvasy(event.y))
 
-    def _refresh_canvas_image(self):
+    def refresh_canvas(self):
+        self.image_width, self.image_height = self.image.size
         self.photo_image = ImageTk.PhotoImage(self.image)
         if self.canvas_image_id is None:
             self.canvas_image_id = self.canvas.create_image(0, 0, image=self.photo_image, anchor="nw")
         else:
             self.canvas.itemconfig(self.canvas_image_id, image=self.photo_image)
+        self.canvas.tag_lower(self.canvas_image_id)
         self.canvas.config(scrollregion=(0, 0, self.image_width, self.image_height))
+        if self.selection_preview_id is not None:
+            self.canvas.tag_raise(self.selection_preview_id)
+        if self.preview_item_id is not None:
+            self.canvas.tag_raise(self.preview_item_id)
 
     def _set_tool(self, tool_name: str):
         self.current_tool.set(tool_name)
@@ -239,7 +248,8 @@ class GraphicEditorApp:
             messagebox.showinfo("Інформація", "Немає дії для скасування.")
             return
         self.image = self.undo_stack.pop()
-        self._refresh_canvas_image()
+        self.refresh_canvas()
+        self._show_selection_rectangle()
         self._mark_modified()
 
     def _undo_shortcut(self, event):
@@ -280,7 +290,7 @@ class GraphicEditorApp:
             draw = ImageDraw.Draw(self.image)
             draw.line((self.last_x, self.last_y, x, y), fill=self.line_color, width=self.line_width.get())
             self.last_x, self.last_y = x, y
-            self._refresh_canvas_image()
+            self.refresh_canvas()
             return
 
         if tool == "Виокремити":
@@ -327,6 +337,7 @@ class GraphicEditorApp:
         tool = self.current_tool.get()
 
         if tool == "Олівець":
+            self.refresh_canvas()
             self._mark_modified()
             return
 
@@ -361,7 +372,7 @@ class GraphicEditorApp:
 
         self._cancel_preview()
         self._clear_selection()
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._mark_modified()
 
     def _cancel_preview(self, event=None):
@@ -429,7 +440,7 @@ class GraphicEditorApp:
             paste_x = int(self.canvas.canvasx(0))
             paste_y = int(self.canvas.canvasy(0))
         self.image.paste(self.copied_fragment, (paste_x, paste_y))
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._show_selection_rectangle()
         self._mark_modified()
         self.status_label.config(text="Скопійований фрагмент вставлено.")
@@ -444,7 +455,7 @@ class GraphicEditorApp:
         self._save_state_for_undo()
         draw = ImageDraw.Draw(self.image)
         draw.rectangle(self.selection_rect, fill="white")
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._show_selection_rectangle()
         self._mark_modified()
         self.status_label.config(text="Виділену область очищено.")
@@ -457,7 +468,7 @@ class GraphicEditorApp:
         self._cancel_preview()
         self._clear_selection()
         self.copied_fragment = None
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._mark_saved()
 
     def _open_image(self):
@@ -484,7 +495,7 @@ class GraphicEditorApp:
             self._cancel_preview()
             self._clear_selection()
             self.copied_fragment = None
-            self._refresh_canvas_image()
+            self.refresh_canvas()
             self._mark_saved()
         except Exception:
             messagebox.showerror("Помилка", "Файл не вдалося відкрити.")
@@ -530,7 +541,7 @@ class GraphicEditorApp:
         self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
         self._cancel_preview()
         self._clear_selection()
-        self._refresh_canvas_image()
+        self.refresh_canvas()
         self._mark_modified()
 
     def _exit_app(self):
