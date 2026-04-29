@@ -1,9 +1,9 @@
 import tkinter as tk
-from tkinter import messagebox
 from pathlib import Path
 import webbrowser
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
+from tkinter import colorchooser, messagebox
 
 
 class GraphicEditorApp:
@@ -15,16 +15,29 @@ class GraphicEditorApp:
         self.current_tool = tk.StringVar(value="Олівець")
         self.toolbar_visible = tk.BooleanVar(value=True)
 
+        self.line_color = "#000000"
+        self.fill_color = ""
+        self.line_width = tk.IntVar(value=2)
+
         self.image_width = 1600
         self.image_height = 1200
         self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
         self.photo_image = None
         self.canvas_image_id = None
 
+        self.undo_stack = []
+        self.preview_item_id = None
+        self.start_x = None
+        self.start_y = None
+        self.last_x = None
+        self.last_y = None
+        self.is_drawing = False
+
         self._create_menu()
         self._create_toolbar()
         self._create_canvas_area()
         self._create_status_bar()
+        self._bind_events()
         self._refresh_canvas_image()
 
     def _create_menu(self):
@@ -40,7 +53,7 @@ class GraphicEditorApp:
         menu_bar.add_cascade(label="Файл", menu=file_menu)
 
         edit_menu = tk.Menu(menu_bar, tearoff=0)
-        edit_menu.add_command(label="Скасувати", command=self._not_implemented)
+        edit_menu.add_command(label="Скасувати", command=self._undo)
         edit_menu.add_command(label="Копіювати", command=self._not_implemented)
         edit_menu.add_command(label="Вставити", command=self._not_implemented)
         edit_menu.add_command(label="Очистити", command=self._not_implemented)
@@ -81,12 +94,6 @@ class GraphicEditorApp:
         self.toolbar_frame = tk.Frame(self.root, bd=1, relief=tk.RAISED, padx=6, pady=4)
         self.toolbar_frame.pack(side=tk.TOP, fill=tk.X)
 
-        file_group = tk.LabelFrame(self.toolbar_frame, text="Файл", padx=4, pady=3)
-        file_group.pack(side=tk.LEFT, padx=4)
-        tk.Button(file_group, text="Новий", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
-        tk.Button(file_group, text="Відкрити", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
-        tk.Button(file_group, text="Зберегти", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
-
         tools_group = tk.LabelFrame(self.toolbar_frame, text="Інструменти", padx=4, pady=3)
         tools_group.pack(side=tk.LEFT, padx=4)
         tk.Button(tools_group, text="Олівець", command=lambda: self._set_tool("Олівець")).pack(side=tk.LEFT, padx=2)
@@ -94,11 +101,16 @@ class GraphicEditorApp:
         tk.Button(tools_group, text="Прямокутник", command=lambda: self._set_tool("Прямокутник")).pack(side=tk.LEFT, padx=2)
         tk.Button(tools_group, text="Еліпс", command=lambda: self._set_tool("Еліпс")).pack(side=tk.LEFT, padx=2)
 
+        params_group = tk.LabelFrame(self.toolbar_frame, text="Параметри", padx=4, pady=3)
+        params_group.pack(side=tk.LEFT, padx=4)
+        tk.Button(params_group, text="Колір лінії", command=self._choose_line_color).pack(side=tk.LEFT, padx=2)
+        tk.Button(params_group, text="Колір заливки", command=self._choose_fill_color).pack(side=tk.LEFT, padx=2)
+        tk.Label(params_group, text="Товщина:").pack(side=tk.LEFT, padx=(8, 2))
+        tk.Spinbox(params_group, from_=1, to=20, width=4, textvariable=self.line_width).pack(side=tk.LEFT)
+
         edit_group = tk.LabelFrame(self.toolbar_frame, text="Редагування", padx=4, pady=3)
         edit_group.pack(side=tk.LEFT, padx=4)
-        tk.Button(edit_group, text="Скасувати", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
-        tk.Button(edit_group, text="Копіювати", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
-        tk.Button(edit_group, text="Вставити", command=self._not_implemented).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Скасувати", command=self._undo).pack(side=tk.LEFT, padx=2)
 
     def _create_canvas_area(self):
         canvas_frame = tk.Frame(self.root)
@@ -122,14 +134,30 @@ class GraphicEditorApp:
         status_frame = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.status_label = tk.Label(
-            status_frame,
-            text=f"Поточний інструмент: {self.current_tool.get()}",
-            anchor="w",
-            padx=8,
-            pady=4,
-        )
+        self.status_label = tk.Label(status_frame, text="", anchor="w", padx=8, pady=4)
         self.status_label.pack(fill=tk.X)
+        self._update_status()
+
+    def _update_status(self):
+        self.status_label.config(
+            text=(
+                f"Поточний інструмент: {self.current_tool.get()} | "
+                f"Колір лінії: {self.line_color} | "
+                f"Товщина: {self.line_width.get()}"
+            )
+        )
+
+    def _bind_events(self):
+        self.canvas.bind("<ButtonPress-1>", self._on_mouse_down)
+        self.canvas.bind("<B1-Motion>", self._on_mouse_move)
+        self.canvas.bind("<ButtonRelease-1>", self._on_mouse_up)
+
+        self.root.bind("<Control-z>", self._undo_shortcut)
+        self.root.bind("<Control-Z>", self._undo_shortcut)
+        self.root.bind("<Escape>", self._cancel_preview)
+
+    def _get_canvas_coordinates(self, event):
+        return int(self.canvas.canvasx(event.x)), int(self.canvas.canvasy(event.y))
 
     def _refresh_canvas_image(self):
         self.photo_image = ImageTk.PhotoImage(self.image)
@@ -141,13 +169,137 @@ class GraphicEditorApp:
 
     def _set_tool(self, tool_name: str):
         self.current_tool.set(tool_name)
-        self.status_label.config(text=f"Поточний інструмент: {tool_name}")
+        self._cancel_preview()
+        self._update_status()
 
     def _toggle_toolbar(self):
         if self.toolbar_visible.get():
             self.toolbar_frame.pack(side=tk.TOP, fill=tk.X)
         else:
             self.toolbar_frame.pack_forget()
+
+    def _choose_line_color(self):
+        color = colorchooser.askcolor(title="Виберіть колір лінії", color=self.line_color)
+        if color[1]:
+            self.line_color = color[1]
+            self._update_status()
+
+    def _choose_fill_color(self):
+        color = colorchooser.askcolor(title="Виберіть колір заливки")
+        if color[1]:
+            self.fill_color = color[1]
+
+    def _save_state_for_undo(self):
+        self.undo_stack.append(self.image.copy())
+
+    def _undo(self):
+        if not self.undo_stack:
+            messagebox.showinfo("Інформація", "Немає дії для скасування.")
+            return
+        self.image = self.undo_stack.pop()
+        self._refresh_canvas_image()
+
+    def _undo_shortcut(self, event):
+        self._undo()
+
+    def _on_mouse_down(self, event):
+        x, y = self._get_canvas_coordinates(event)
+        self.start_x, self.start_y = x, y
+        self.last_x, self.last_y = x, y
+        self.is_drawing = True
+
+        if self.current_tool.get() == "Олівець":
+            self._save_state_for_undo()
+
+    def _on_mouse_move(self, event):
+        if not self.is_drawing:
+            return
+
+        x, y = self._get_canvas_coordinates(event)
+        tool = self.current_tool.get()
+
+        if tool == "Олівець":
+            draw = ImageDraw.Draw(self.image)
+            draw.line((self.last_x, self.last_y, x, y), fill=self.line_color, width=self.line_width.get())
+            self.last_x, self.last_y = x, y
+            self._refresh_canvas_image()
+            return
+
+        if tool not in {"Лінія", "Прямокутник", "Еліпс"}:
+            return
+
+        if self.preview_item_id is not None:
+            self.canvas.delete(self.preview_item_id)
+
+        if tool == "Лінія":
+            self.preview_item_id = self.canvas.create_line(
+                self.start_x, self.start_y, x, y, fill=self.line_color, width=self.line_width.get()
+            )
+        elif tool == "Прямокутник":
+            self.preview_item_id = self.canvas.create_rectangle(
+                self.start_x,
+                self.start_y,
+                x,
+                y,
+                outline=self.line_color,
+                fill=self.fill_color if self.fill_color else "",
+                width=self.line_width.get(),
+            )
+        elif tool == "Еліпс":
+            self.preview_item_id = self.canvas.create_oval(
+                self.start_x,
+                self.start_y,
+                x,
+                y,
+                outline=self.line_color,
+                fill=self.fill_color if self.fill_color else "",
+                width=self.line_width.get(),
+            )
+
+    def _on_mouse_up(self, event):
+        if not self.is_drawing:
+            return
+
+        self.is_drawing = False
+        x, y = self._get_canvas_coordinates(event)
+        tool = self.current_tool.get()
+
+        if tool == "Олівець":
+            return
+
+        if tool not in {"Лінія", "Прямокутник", "Еліпс"}:
+            self._cancel_preview()
+            return
+
+        self._save_state_for_undo()
+        draw = ImageDraw.Draw(self.image)
+        xy = (self.start_x, self.start_y, x, y)
+
+        if tool == "Лінія":
+            draw.line(xy, fill=self.line_color, width=self.line_width.get())
+        elif tool == "Прямокутник":
+            draw.rectangle(
+                xy,
+                outline=self.line_color,
+                fill=self.fill_color if self.fill_color else None,
+                width=self.line_width.get(),
+            )
+        elif tool == "Еліпс":
+            draw.ellipse(
+                xy,
+                outline=self.line_color,
+                fill=self.fill_color if self.fill_color else None,
+                width=self.line_width.get(),
+            )
+
+        self._cancel_preview()
+        self._refresh_canvas_image()
+
+    def _cancel_preview(self, event=None):
+        self.is_drawing = False
+        if self.preview_item_id is not None:
+            self.canvas.delete(self.preview_item_id)
+            self.preview_item_id = None
 
     def _open_help(self):
         help_path = Path(__file__).with_name("help.html")
@@ -161,7 +313,7 @@ class GraphicEditorApp:
             "Про програму",
             "Графічний редактор\n\n"
             "Навчальний проєкт з системного програмування.\n"
-            "Поточна версія містить базову структуру застосунку.",
+            "Реалізовано базові інструменти малювання.",
         )
 
     def _not_implemented(self):
