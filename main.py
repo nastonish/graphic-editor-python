@@ -57,9 +57,12 @@ class GraphicEditorApp:
 
         edit_menu = tk.Menu(menu_bar, tearoff=0)
         edit_menu.add_command(label="Скасувати", command=self._undo)
-        edit_menu.add_command(label="Копіювати", command=self._not_implemented)
-        edit_menu.add_command(label="Вставити", command=self._not_implemented)
-        edit_menu.add_command(label="Очистити", command=self._clear_canvas)
+        edit_menu.add_command(label="Виокремити", command=lambda: self._set_tool("Виокремити"))
+        edit_menu.add_command(label="Копіювати", command=self._copy_selection)
+        edit_menu.add_command(label="Вставити", command=self._paste_selection)
+        edit_menu.add_command(label="Очистити виділене", command=self._clear_selected_area)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Очистити полотно", command=self._clear_canvas)
         menu_bar.add_cascade(label="Редагування", menu=edit_menu)
 
         tools_menu = tk.Menu(menu_bar, tearoff=0)
@@ -103,6 +106,7 @@ class GraphicEditorApp:
         tk.Button(tools_group, text="Лінія", command=lambda: self._set_tool("Лінія")).pack(side=tk.LEFT, padx=2)
         tk.Button(tools_group, text="Прямокутник", command=lambda: self._set_tool("Прямокутник")).pack(side=tk.LEFT, padx=2)
         tk.Button(tools_group, text="Еліпс", command=lambda: self._set_tool("Еліпс")).pack(side=tk.LEFT, padx=2)
+        tk.Button(tools_group, text="Виокремити", command=lambda: self._set_tool("Виокремити")).pack(side=tk.LEFT, padx=2)
 
         params_group = tk.LabelFrame(self.toolbar_frame, text="Параметри", padx=4, pady=3)
         params_group.pack(side=tk.LEFT, padx=4)
@@ -114,7 +118,10 @@ class GraphicEditorApp:
         edit_group = tk.LabelFrame(self.toolbar_frame, text="Редагування", padx=4, pady=3)
         edit_group.pack(side=tk.LEFT, padx=4)
         tk.Button(edit_group, text="Скасувати", command=self._undo).pack(side=tk.LEFT, padx=2)
-        tk.Button(edit_group, text="Очистити", command=self._clear_canvas).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Копіювати", command=self._copy_selection).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Вставити", command=self._paste_selection).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Очистити виділене", command=self._clear_selected_area).pack(side=tk.LEFT, padx=2)
+        tk.Button(edit_group, text="Очистити полотно", command=self._clear_canvas).pack(side=tk.LEFT, padx=2)
 
     def _create_canvas_area(self):
         canvas_frame = tk.Frame(self.root)
@@ -259,6 +266,9 @@ class GraphicEditorApp:
         if self.current_tool.get() == "Олівець":
             self._save_state_for_undo()
 
+        if self.current_tool.get() == "Виокремити":
+            self._clear_selection_preview()
+
     def _on_mouse_move(self, event):
         if not self.is_drawing:
             return
@@ -271,6 +281,10 @@ class GraphicEditorApp:
             draw.line((self.last_x, self.last_y, x, y), fill=self.line_color, width=self.line_width.get())
             self.last_x, self.last_y = x, y
             self._refresh_canvas_image()
+            return
+
+        if tool == "Виокремити":
+            self._update_selection_preview(x, y)
             return
 
         if tool not in {"Лінія", "Прямокутник", "Еліпс"}:
@@ -316,6 +330,10 @@ class GraphicEditorApp:
             self._mark_modified()
             return
 
+        if tool == "Виокремити":
+            self._finalize_selection(x, y)
+            return
+
         if tool not in {"Лінія", "Прямокутник", "Еліпс"}:
             self._cancel_preview()
             return
@@ -342,6 +360,7 @@ class GraphicEditorApp:
             )
 
         self._cancel_preview()
+        self._clear_selection()
         self._refresh_canvas_image()
         self._mark_modified()
 
@@ -350,7 +369,85 @@ class GraphicEditorApp:
         if self.preview_item_id is not None:
             self.canvas.delete(self.preview_item_id)
             self.preview_item_id = None
+        if self.current_tool.get() == "Виокремити":
+            self._clear_selection_preview()
 
+
+    def _clear_selection_preview(self):
+        if self.selection_preview_id is not None:
+            self.canvas.delete(self.selection_preview_id)
+            self.selection_preview_id = None
+
+    def _show_selection_rectangle(self):
+        if not self.selection_rect:
+            return
+        self._clear_selection_preview()
+        x1, y1, x2, y2 = self.selection_rect
+        self.selection_preview_id = self.canvas.create_rectangle(
+            x1, y1, x2, y2, outline="#1e90ff", width=2, dash=(4, 2)
+        )
+
+    def _update_selection_preview(self, x, y):
+        self._clear_selection_preview()
+        self.selection_preview_id = self.canvas.create_rectangle(
+            self.start_x, self.start_y, x, y, outline="#1e90ff", width=2, dash=(4, 2)
+        )
+
+    def _finalize_selection(self, x, y):
+        self.is_drawing = False
+        x1, x2 = sorted((self.start_x, x))
+        y1, y2 = sorted((self.start_y, y))
+        if x1 == x2 or y1 == y2:
+            self.selection_rect = None
+            self._clear_selection_preview()
+            self.status_label.config(text="Виділення скасовано.")
+            return
+        self.selection_rect = (x1, y1, x2, y2)
+        self._show_selection_rectangle()
+        self.status_label.config(text="Область виокремлено.")
+
+    def _clear_selection(self):
+        self.selection_rect = None
+        self._clear_selection_preview()
+
+    def _copy_selection(self):
+        if not self.selection_rect:
+            messagebox.showinfo("Інформація", "Спочатку виберіть область зображення.")
+            return
+        x1, y1, x2, y2 = self.selection_rect
+        self.copied_fragment = self.image.crop((x1, y1, x2, y2))
+        self.status_label.config(text="Виділену область скопійовано.")
+
+    def _paste_selection(self):
+        if self.copied_fragment is None:
+            messagebox.showinfo("Інформація", "Немає скопійованого фрагмента.")
+            return
+        self._save_state_for_undo()
+        if self.selection_rect:
+            paste_x, paste_y = self.selection_rect[0], self.selection_rect[1]
+        else:
+            paste_x = int(self.canvas.canvasx(0))
+            paste_y = int(self.canvas.canvasy(0))
+        self.image.paste(self.copied_fragment, (paste_x, paste_y))
+        self._refresh_canvas_image()
+        self._show_selection_rectangle()
+        self._mark_modified()
+        self.status_label.config(text="Скопійований фрагмент вставлено.")
+
+    def _clear_selected_area(self):
+        if not self.selection_rect:
+            messagebox.showinfo("Інформація", "Спочатку виберіть область зображення.")
+            return
+        confirmed = messagebox.askyesno("Підтвердження", "Очистити виділену область?")
+        if not confirmed:
+            return
+        self._save_state_for_undo()
+        draw = ImageDraw.Draw(self.image)
+        draw.rectangle(self.selection_rect, fill="white")
+        self._refresh_canvas_image()
+        self._show_selection_rectangle()
+        self._mark_modified()
+        self.status_label.config(text="Виділену область очищено.")
     def _new_image(self):
         if not self._confirm_discard_changes():
             return
@@ -358,6 +455,8 @@ class GraphicEditorApp:
         self.current_file_path = None
         self.undo_stack.clear()
         self._cancel_preview()
+        self._clear_selection()
+        self.copied_fragment = None
         self._refresh_canvas_image()
         self._mark_saved()
 
@@ -383,6 +482,8 @@ class GraphicEditorApp:
             self.current_file_path = file_path
             self.undo_stack.clear()
             self._cancel_preview()
+            self._clear_selection()
+            self.copied_fragment = None
             self._refresh_canvas_image()
             self._mark_saved()
         except Exception:
@@ -428,6 +529,7 @@ class GraphicEditorApp:
         self._save_state_for_undo()
         self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
         self._cancel_preview()
+        self._clear_selection()
         self._refresh_canvas_image()
         self._mark_modified()
 
