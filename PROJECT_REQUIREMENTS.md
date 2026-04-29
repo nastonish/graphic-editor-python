@@ -331,21 +331,4 @@ help.html exists and opens from the program;
 examples/comments.txt exists;
 docs/notes_for_report.md exists;
 the code is readable and appropriate for a student project;
-there are no mentions of AI, ChatGPT, Codex or generated code in project files.
-
----
-
-Оце буде краще, ніж той попередній варіант. Він задає **рамки і вимоги**, але не наказує Codex, у якій послідовності все робити.
-
-А вже далі ми будемо давати Codex маленькі конкретні промпти, наприклад:
-
-```text
-Read README.md and PROJECT_SPEC.md. Create only the initial project structure and a working Tkinter window with a blank canvas. Do not implement all features yet.
-
-Потім:
-
-Add drawing tools: pencil, line, rectangle and ellipse.
-
-Потім:
-
-Add file operations: new, open, save, save as.
+there are no mentions of code generation tools in project files.

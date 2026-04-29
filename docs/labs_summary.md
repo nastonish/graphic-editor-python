@@ -161,4 +161,4 @@ The final submission should contain:
 2. A separate non-archived report file.
 3. Screenshots in the report for the key project functions.
 
-The working files for Codex, such as this summary and reference laboratory PDFs, do not have to be included in the final clean submission archive.
+Working service files and reference laboratory PDFs do not have to be included in the final clean submission archive.
