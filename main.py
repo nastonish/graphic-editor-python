@@ -2,8 +2,8 @@ import tkinter as tk
 from pathlib import Path
 import webbrowser
 
-from PIL import Image, ImageDraw, ImageTk
-from tkinter import colorchooser, filedialog, messagebox
+from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageTk
+from tkinter import colorchooser, filedialog, messagebox, simpledialog
 
 
 class GraphicEditorApp:
@@ -51,6 +51,7 @@ class GraphicEditorApp:
 
         file_menu = tk.Menu(menu_bar, tearoff=0)
         file_menu.add_command(label="Новий", command=self._new_image)
+        file_menu.add_command(label="Нове зображення з розміром", command=self._new_image_with_size)
         file_menu.add_command(label="Відкрити", command=self._open_image)
         file_menu.add_command(label="Зберегти", command=self._save_image)
         file_menu.add_command(label="Зберегти як", command=self._save_image_as)
@@ -77,11 +78,13 @@ class GraphicEditorApp:
         menu_bar.add_cascade(label="Інструменти", menu=tools_menu)
 
         image_menu = tk.Menu(menu_bar, tearoff=0)
-        image_menu.add_command(label="Відтінки сірого", command=self._not_implemented)
-        image_menu.add_command(label="Інверсія кольорів", command=self._not_implemented)
-        image_menu.add_command(label="Повернути на 90°", command=self._not_implemented)
-        image_menu.add_command(label="Віддзеркалити горизонтально", command=self._not_implemented)
-        image_menu.add_command(label="Віддзеркалити вертикально", command=self._not_implemented)
+        image_menu.add_command(label="Відтінки сірого", command=self._apply_grayscale)
+        image_menu.add_command(label="Інверсія кольорів", command=self._apply_invert)
+        image_menu.add_command(label="Повернути на 90° за годинниковою стрілкою", command=self._rotate_clockwise)
+        image_menu.add_command(label="Повернути на 90° проти годинникової стрілки", command=self._rotate_counterclockwise)
+        image_menu.add_command(label="Віддзеркалити горизонтально", command=self._mirror_horizontal)
+        image_menu.add_command(label="Віддзеркалити вертикально", command=self._mirror_vertical)
+        image_menu.add_command(label="Розмиття", command=self._apply_blur)
         menu_bar.add_cascade(label="Зображення", menu=image_menu)
 
         view_menu = tk.Menu(menu_bar, tearoff=0)
@@ -125,6 +128,13 @@ class GraphicEditorApp:
         tk.Button(edit_group, text="Вставити", command=self._paste_selection).pack(side=tk.LEFT, padx=2)
         tk.Button(edit_group, text="Очистити виділене", command=self._clear_selected_area).pack(side=tk.LEFT, padx=2)
         tk.Button(edit_group, text="Очистити полотно", command=self._clear_canvas).pack(side=tk.LEFT, padx=2)
+
+        image_ops_group = tk.LabelFrame(self.toolbar_frame, text="Операції зображення", padx=4, pady=3)
+        image_ops_group.pack(side=tk.LEFT, padx=4)
+        tk.Button(image_ops_group, text="Сірий", command=self._apply_grayscale).pack(side=tk.LEFT, padx=2)
+        tk.Button(image_ops_group, text="Інверсія", command=self._apply_invert).pack(side=tk.LEFT, padx=2)
+        tk.Button(image_ops_group, text="↻ 90°", command=self._rotate_clockwise).pack(side=tk.LEFT, padx=2)
+        tk.Button(image_ops_group, text="Розмиття", command=self._apply_blur).pack(side=tk.LEFT, padx=2)
 
     def _create_canvas_area(self):
         canvas_frame = tk.Frame(self.root)
@@ -462,7 +472,35 @@ class GraphicEditorApp:
     def _new_image(self):
         if not self._confirm_discard_changes():
             return
-        self.image = Image.new("RGB", (self.image_width, self.image_height), "white")
+        self._create_new_blank_image(self.image_width, self.image_height)
+
+    def _new_image_with_size(self):
+        if not self._confirm_discard_changes():
+            return
+        width = simpledialog.askinteger(
+            "Нове зображення",
+            "Введіть ширину (пікселі):",
+            initialvalue=800,
+            minvalue=1,
+        )
+        if width is None:
+            return
+        height = simpledialog.askinteger(
+            "Нове зображення",
+            "Введіть висоту (пікселі):",
+            initialvalue=600,
+            minvalue=1,
+        )
+        if height is None:
+            return
+        if width <= 0 or height <= 0:
+            messagebox.showerror("Помилка", "Ширина і висота мають бути додатними числами.")
+            return
+        self._create_new_blank_image(width, height)
+
+    def _create_new_blank_image(self, width: int, height: int):
+        self.image_width, self.image_height = width, height
+        self.image = Image.new("RGB", (width, height), "white")
         self.current_file_path = None
         self.undo_stack.clear()
         self._cancel_preview()
@@ -564,8 +602,64 @@ class GraphicEditorApp:
             "Реалізовано базові інструменти малювання.",
         )
 
-    def _not_implemented(self):
-        messagebox.showinfo("Інформація", "Ця функція буде реалізована на наступних етапах.")
+    def _apply_image_operation(self, operation_func, status_text: str, clear_selection: bool = False):
+        try:
+            self._save_state_for_undo()
+            new_image = operation_func(self.image)
+            self.image = new_image.convert("RGB")
+            if clear_selection:
+                self._clear_selection()
+            self.refresh_canvas()
+            self._mark_modified()
+            self.status_label.config(text=status_text)
+        except Exception:
+            messagebox.showerror("Помилка", "Не вдалося виконати операцію із зображенням.")
+
+    def _apply_grayscale(self):
+        self._apply_image_operation(
+            lambda img: ImageOps.grayscale(img),
+            "Застосовано фільтр «Відтінки сірого».",
+        )
+
+    def _apply_invert(self):
+        self._apply_image_operation(
+            lambda img: ImageOps.invert(img),
+            "Застосовано «Інверсія кольорів».",
+        )
+
+    def _rotate_clockwise(self):
+        self._apply_image_operation(
+            lambda img: img.transpose(Image.Transpose.ROTATE_270),
+            "Зображення повернуто на 90° за годинниковою стрілкою.",
+            clear_selection=True,
+        )
+
+    def _rotate_counterclockwise(self):
+        self._apply_image_operation(
+            lambda img: img.transpose(Image.Transpose.ROTATE_90),
+            "Зображення повернуто на 90° проти годинникової стрілки.",
+            clear_selection=True,
+        )
+
+    def _mirror_horizontal(self):
+        self._apply_image_operation(
+            lambda img: ImageOps.mirror(img),
+            "Зображення віддзеркалено горизонтально.",
+            clear_selection=True,
+        )
+
+    def _mirror_vertical(self):
+        self._apply_image_operation(
+            lambda img: ImageOps.flip(img),
+            "Зображення віддзеркалено вертикально.",
+            clear_selection=True,
+        )
+
+    def _apply_blur(self):
+        self._apply_image_operation(
+            lambda img: img.filter(ImageFilter.BLUR),
+            "Застосовано розмиття.",
+        )
 
 
 if __name__ == "__main__":
